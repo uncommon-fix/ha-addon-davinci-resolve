@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.0-alpha.2
+
+- **CI fix — no functional changes.** The alpha.1 GHCR build failed
+  during the multi-arch image step because the `description:` field
+  in `config.yaml` contained an apostrophe (`DaVinci's`) plus literal
+  double quotes (`Each "library"`); the `home-assistant/builder`
+  composite action splices the description into a single-quoted bash
+  label, and the apostrophe closed the quote and broke the script
+  with `unexpected EOF while looking for matching backtick-quote`.
+  Rewrote the description without `'` or `"` so the build runs clean.
+  No image at `ghcr.io/uncommon-fix/ha-addon-davinci-resolve:alpha.1`
+  was ever published; alpha.2 is the first usable release.
+
 ## 0.1.0-alpha.1
 
 - **First public alpha.** Self-hosted PostgreSQL for DaVinci Resolve
