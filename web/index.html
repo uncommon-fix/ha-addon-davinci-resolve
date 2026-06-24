@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="ingress-path" content="{{INGRESS_PATH}}">
+  <meta name="app-version" content="{{APP_VERSION}}">
+  <title>DaVinci Resolve Postgres</title>
+  <script src="{{INGRESS_PATH}}/static/tailwindcss-3.4.17.min.js"></script>
+  <!-- ?v=<addon-version> cache-buster on app.js so every release busts
+       the browser cache without forcing a hard-refresh. -->
+  <script src="{{INGRESS_PATH}}/static/app.js?v={{APP_VERSION}}"></script>
+  <script defer src="{{INGRESS_PATH}}/static/alpinejs-3.15.12.min.js"></script>
+  <style>[x-cloak]{display:none!important}</style>
+</head>
+<body class="h-full bg-gray-50 text-gray-900 antialiased" x-data="davinciApp" x-init="load()" x-cloak>
+
+  <!-- ============ TOAST REGION ============
+       Stack at top-right; success/info auto-fade after 4s; errors are
+       sticky until dismissed. Same shape as the traefik addon's. -->
+  <div class="fixed top-3 right-3 z-50 flex flex-col gap-2 max-w-sm w-[calc(100%-1.5rem)]"
+       aria-live="polite" aria-atomic="false">
+    <template x-for="t in toasts" :key="t.id">
+      <div x-transition
+           :class="t.kind === 'error' ? 'bg-red-50 border-red-300 text-red-900' :
+                   t.kind === 'success' ? 'bg-emerald-50 border-emerald-300 text-emerald-900' :
+                                          'bg-sky-50 border-sky-300 text-sky-900'"
+           class="p-3 rounded border shadow-sm text-sm flex items-start gap-2">
+        <span class="flex-1 break-words" x-text="t.text"></span>
+        <button @click="_dismissToast(t.id)"
+                class="shrink-0 text-gray-500 hover:text-gray-900 text-lg leading-none -mt-0.5"
+                aria-label="Dismiss notification">&times;</button>
+      </div>
+    </template>
+  </div>
+
+  <!-- ============ TAKEOVER PROMPT ============
+       Shown on load() when /api/session/claim returns 409. Same modal
+       shape as traefik. -->
+  <div x-show="takeoverPrompt.visible" x-transition.opacity
+       class="fixed inset-0 z-50 bg-gray-900/40 flex items-center justify-center p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="takeover-title"
+         class="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+      <h2 id="takeover-title" class="text-base font-semibold mb-2">Another session is editing</h2>
+      <p class="text-sm text-gray-700">
+        A tab or browser opened <span x-text="takeoverPrompt.age"></span>s ago is currently
+        editing this add-on. Only one editor can change libraries at a time.
+      </p>
+      <div class="flex gap-2 mt-4">
+        <button @click="takeoverSession()"
+                class="px-3 py-1.5 rounded bg-blue-600 text-white text-sm font-medium hover:bg-blue-700">
+          Take over
+        </button>
+        <button @click="viewReadOnly()"
+                class="px-3 py-1.5 rounded border bg-white text-sm font-medium hover:bg-gray-50">
+          View read-only
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ READ-ONLY BAR ============ -->
+  <div x-show="viewMode === 'ro'" x-transition
+       class="bg-amber-100 border-b border-amber-200 text-amber-900 text-sm px-4 py-2 flex items-center justify-between">
+    <span>Read-only view — another tab is the active editor.</span>
+    <button @click="takeoverSession()"
+            class="px-2.5 py-1 rounded bg-amber-600 text-white text-xs font-medium hover:bg-amber-700">
+      Take over
+    </button>
+  </div>
+
+  <!-- ============ HEADER ============ -->
+  <header class="bg-white border-b border-gray-200">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between flex-wrap gap-3">
+      <div class="flex items-center gap-3">
+        <span class="inline-flex items-center justify-center w-8 h-8 rounded bg-purple-100 text-purple-700">
+          <!-- mdi:database — small inline SVG -->
+          <svg viewBox="0 0 24 24" class="w-5 h-5" aria-hidden="true"><path fill="currentColor" d="M12,3C7.58,3 4,4.79 4,7C4,9.21 7.58,11 12,11C16.42,11 20,9.21 20,7C20,4.79 16.42,3 12,3M4,9V12C4,14.21 7.58,16 12,16C16.42,16 20,14.21 20,12V9C20,11.21 16.42,13 12,13C7.58,13 4,11.21 4,9M4,14V17C4,19.21 7.58,21 12,21C16.42,21 20,19.21 20,17V14C20,16.21 16.42,18 12,18C7.58,18 4,16.21 4,14Z" /></svg>
+        </span>
+        <h1 class="text-lg font-semibold">DaVinci Resolve Postgres</h1>
+      </div>
+      <div class="text-xs text-gray-600 flex items-center gap-2">
+        <span class="inline-block w-2 h-2 rounded-full"
+              :class="state.pg_up ? 'bg-emerald-500' : 'bg-red-500'"
+              :title="state.pg_up ? 'Postgres up' : 'Postgres down'"></span>
+        <span x-text="state.pg_up ? ('PG ' + (state.pg_version || '?')) : 'PG down'"></span>
+        <span>·</span>
+        <span x-text="(state.library_count ?? 0) + ' librar' + ((state.library_count === 1) ? 'y' : 'ies')"></span>
+        <span class="text-gray-400">·</span>
+        <span class="font-mono" x-text="(state.host_hint || '') + ':' + (state.port || 5432)"></span>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-4 py-6">
+
+    <!-- ============ EMPTY STATE ============ -->
+    <template x-if="!loading && libraries.length === 0">
+      <div class="bg-white border border-dashed border-gray-300 rounded-lg p-8 text-center">
+        <h2 class="text-base font-semibold mb-1">No libraries yet</h2>
+        <p class="text-sm text-gray-600 mb-4">
+          Create one to host a DaVinci Resolve project database here. You'll
+          get a username + password to paste into DaVinci's
+          <span class="font-medium">Project Manager → Databases → Connect</span> dialog.
+        </p>
+        <button @click="openCreate()"
+                :disabled="viewMode === 'ro'"
+                class="px-4 py-2 rounded bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:bg-gray-400">
+          + Create your first library
+        </button>
+      </div>
+    </template>
+
+    <!-- ============ LIBRARY LIST ============ -->
+    <template x-if="libraries.length > 0">
+      <div>
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-base font-semibold">Libraries</h2>
+          <button @click="openCreate()"
+                  :disabled="viewMode === 'ro'"
+                  class="px-3 py-1.5 rounded bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400">
+            + Create library
+          </button>
+        </div>
+
+        <ul class="space-y-2">
+          <template x-for="lib in libraries" :key="lib.name">
+            <li class="bg-white border border-gray-200 rounded-lg p-4 flex items-start justify-between gap-3 flex-wrap">
+              <div class="min-w-0 flex-1">
+                <h3 class="font-mono text-sm font-semibold" x-text="lib.name"></h3>
+                <p class="text-xs text-gray-600 mt-1">
+                  user <span class="font-mono" x-text="lib.user"></span>
+                  · database <span class="font-mono" x-text="lib.db"></span>
+                  · created <span x-text="formatCreated(lib.created_at)"></span>
+                </p>
+              </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <button @click="openResetPassword(lib.name)"
+                        :disabled="viewMode === 'ro' || busy"
+                        class="text-xs px-2.5 py-1 rounded border bg-white hover:bg-gray-50 disabled:opacity-50">
+                  Reset password
+                </button>
+                <button @click="openDelete(lib.name)"
+                        :disabled="viewMode === 'ro' || busy"
+                        class="text-xs px-2.5 py-1 rounded border border-red-300 text-red-700 bg-white hover:bg-red-50 disabled:opacity-50">
+                  Delete
+                </button>
+              </div>
+            </li>
+          </template>
+        </ul>
+      </div>
+    </template>
+
+  </main>
+
+  <!-- ============ CREATE MODAL ============
+       Single modal that has two states:
+         1. composing: the user types a library name; Submit
+         2. credentials: backend returned credentials; show the
+            connection block ready to paste into DaVinci. -->
+  <div x-show="createModal.open" x-transition.opacity
+       class="fixed inset-0 z-40 bg-gray-900/40 flex items-center justify-center p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="create-title"
+         class="bg-white rounded-lg shadow-xl max-w-lg w-full p-6">
+      <h2 id="create-title" class="text-base font-semibold mb-2">
+        <span x-show="createModal.stage === 'composing'">Create library</span>
+        <span x-show="createModal.stage === 'credentials'">Library created — copy these credentials</span>
+      </h2>
+
+      <!-- STAGE 1: composing -->
+      <template x-if="createModal.stage === 'composing'">
+        <div>
+          <p class="text-sm text-gray-600 mb-3">
+            Each library is a fresh Postgres database + user. Pick a short
+            name (e.g. <span class="font-mono">family-vlogs</span>,
+            <span class="font-mono">work_2026</span>). Lowercase letters,
+            digits, <span class="font-mono">_</span> and
+            <span class="font-mono">-</span>; 3–32 chars.
+          </p>
+          <label class="block text-xs text-gray-600 mb-1" for="lib-name">Library name</label>
+          <input id="lib-name" type="text" x-model="createModal.name"
+                 @keydown.enter.prevent="submitCreate()"
+                 placeholder="my-project"
+                 :class="createModal.nameError ? 'border-red-400 bg-red-50' : 'bg-white'"
+                 class="font-mono border rounded px-2 py-1 w-full max-w-xs">
+          <p x-show="createModal.nameError" class="text-xs text-red-700 mt-1" x-text="createModal.nameError"></p>
+          <div class="flex items-center gap-2 mt-5">
+            <button @click="submitCreate()"
+                    :disabled="!createModal.canSubmit || busy"
+                    class="px-4 py-1.5 rounded bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:bg-gray-400">
+              <span x-show="!busy">Create</span>
+              <span x-show="busy">Creating…</span>
+            </button>
+            <button @click="closeCreate()" :disabled="busy"
+                    class="px-3 py-1.5 rounded border bg-white text-sm hover:bg-gray-50 disabled:opacity-50">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </template>
+
+      <!-- STAGE 2: credentials -->
+      <template x-if="createModal.stage === 'credentials'">
+        <div>
+          <p class="text-sm text-amber-900 bg-amber-50 border border-amber-300 rounded p-2 mb-3">
+            ⚠ The password below is shown <strong>only once</strong>. Copy it now;
+            you can reset it later (which generates a new one) but you can't
+            recover this one.
+          </p>
+          <div class="bg-gray-50 border border-gray-200 rounded p-4 space-y-1.5 text-sm font-mono">
+            <div class="flex gap-3"><span class="text-gray-500 w-32 shrink-0">Database type</span><span>PostgreSQL</span></div>
+            <div class="flex gap-3"><span class="text-gray-500 w-32 shrink-0">Server name</span><span x-text="createModal.result.host_hint"></span></div>
+            <div class="flex gap-3"><span class="text-gray-500 w-32 shrink-0">Port</span><span x-text="createModal.result.port"></span></div>
+            <div class="flex gap-3"><span class="text-gray-500 w-32 shrink-0">Database name</span><span x-text="createModal.result.db"></span></div>
+            <div class="flex gap-3"><span class="text-gray-500 w-32 shrink-0">Username</span><span x-text="createModal.result.user"></span></div>
+            <div class="flex gap-3 items-center">
+              <span class="text-gray-500 w-32 shrink-0">Password</span>
+              <span class="break-all"
+                    x-text="createModal.showPassword ? createModal.result.password : '•'.repeat((createModal.result.password || '').length)"></span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 mt-3 flex-wrap">
+            <button @click="createModal.showPassword = !createModal.showPassword"
+                    class="px-2.5 py-1 rounded border bg-white text-xs hover:bg-gray-50">
+              <span x-show="!createModal.showPassword">Show password</span>
+              <span x-show="createModal.showPassword">Hide password</span>
+            </button>
+            <button @click="copyConnectionBlock(createModal.result)"
+                    class="px-2.5 py-1 rounded border bg-white text-xs hover:bg-gray-50">
+              Copy connection block
+            </button>
+            <button @click="copyToClipboard(createModal.result.password)"
+                    class="px-2.5 py-1 rounded border bg-white text-xs hover:bg-gray-50">
+              Copy password only
+            </button>
+          </div>
+          <div class="mt-5 text-xs text-gray-600">
+            In DaVinci Resolve: <strong>Project Manager → Databases → New Database</strong>,
+            choose <strong>PostgreSQL</strong>, then paste the values above.
+          </div>
+          <div class="flex items-center gap-2 mt-4">
+            <button @click="closeCreate()"
+                    class="px-4 py-1.5 rounded bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700">
+              Done
+            </button>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- ============ DELETE CONFIRM MODAL ============ -->
+  <div x-show="deleteModal.open" x-transition.opacity
+       class="fixed inset-0 z-40 bg-gray-900/40 flex items-center justify-center p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="delete-title"
+         class="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+      <h2 id="delete-title" class="text-base font-semibold mb-2 text-red-700">
+        Delete library <span class="font-mono" x-text="deleteModal.name"></span>?
+      </h2>
+      <p class="text-sm text-gray-700 mb-1">
+        This <strong>drops the database and the user</strong>. Every DaVinci
+        Resolve project stored in this library is permanently lost.
+      </p>
+      <p class="text-sm text-gray-700 mb-3">
+        The media files on your SMB share are <strong>not</strong> affected.
+      </p>
+      <label class="block text-xs text-gray-600 mb-1">Type the library name to confirm:</label>
+      <input type="text" x-model="deleteModal.typed"
+             :placeholder="deleteModal.name"
+             class="font-mono border rounded px-2 py-1 w-full max-w-xs bg-white">
+      <div class="flex items-center gap-2 mt-4">
+        <button @click="submitDelete()"
+                :disabled="deleteModal.typed !== deleteModal.name || busy"
+                class="px-4 py-1.5 rounded bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:bg-gray-400">
+          <span x-show="!busy">Delete library</span>
+          <span x-show="busy">Deleting…</span>
+        </button>
+        <button @click="closeDelete()" :disabled="busy"
+                class="px-3 py-1.5 rounded border bg-white text-sm hover:bg-gray-50 disabled:opacity-50">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ RESET-PASSWORD CONFIRM MODAL ============ -->
+  <div x-show="resetModal.open" x-transition.opacity
+       class="fixed inset-0 z-40 bg-gray-900/40 flex items-center justify-center p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="reset-title"
+         class="bg-white rounded-lg shadow-xl max-w-lg w-full p-6">
+      <h2 id="reset-title" class="text-base font-semibold mb-2">
+        <span x-show="resetModal.stage === 'confirm'">Reset password for <span class="font-mono" x-text="resetModal.name"></span>?</span>
+        <span x-show="resetModal.stage === 'credentials'">New password — copy now</span>
+      </h2>
+
+      <template x-if="resetModal.stage === 'confirm'">
+        <div>
+          <p class="text-sm text-gray-700 mb-3">
+            Generates a new random password. The current password stops working
+            immediately — any DaVinci Resolve client connected with the old
+            password will need to reconnect using the new one.
+          </p>
+          <div class="flex items-center gap-2">
+            <button @click="submitReset()" :disabled="busy"
+                    class="px-4 py-1.5 rounded bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:bg-gray-400">
+              <span x-show="!busy">Reset password</span>
+              <span x-show="busy">Resetting…</span>
+            </button>
+            <button @click="closeReset()" :disabled="busy"
+                    class="px-3 py-1.5 rounded border bg-white text-sm hover:bg-gray-50 disabled:opacity-50">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </template>
+
+      <template x-if="resetModal.stage === 'credentials'">
+        <div>
+          <p class="text-sm text-amber-900 bg-amber-50 border border-amber-300 rounded p-2 mb-3">
+            ⚠ The new password is shown <strong>only once</strong>. Copy it now.
+          </p>
+          <div class="bg-gray-50 border border-gray-200 rounded p-4 space-y-1.5 text-sm font-mono">
+            <div class="flex gap-3"><span class="text-gray-500 w-32 shrink-0">Server name</span><span x-text="resetModal.result.host_hint"></span></div>
+            <div class="flex gap-3"><span class="text-gray-500 w-32 shrink-0">Port</span><span x-text="resetModal.result.port"></span></div>
+            <div class="flex gap-3"><span class="text-gray-500 w-32 shrink-0">Database</span><span x-text="resetModal.result.db"></span></div>
+            <div class="flex gap-3"><span class="text-gray-500 w-32 shrink-0">Username</span><span x-text="resetModal.result.user"></span></div>
+            <div class="flex gap-3 items-center">
+              <span class="text-gray-500 w-32 shrink-0">New password</span>
+              <span class="break-all"
+                    x-text="resetModal.showPassword ? resetModal.result.password : '•'.repeat((resetModal.result.password || '').length)"></span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 mt-3 flex-wrap">
+            <button @click="resetModal.showPassword = !resetModal.showPassword"
+                    class="px-2.5 py-1 rounded border bg-white text-xs hover:bg-gray-50">
+              <span x-show="!resetModal.showPassword">Show password</span>
+              <span x-show="resetModal.showPassword">Hide password</span>
+            </button>
+            <button @click="copyConnectionBlock(resetModal.result)"
+                    class="px-2.5 py-1 rounded border bg-white text-xs hover:bg-gray-50">
+              Copy connection block
+            </button>
+            <button @click="copyToClipboard(resetModal.result.password)"
+                    class="px-2.5 py-1 rounded border bg-white text-xs hover:bg-gray-50">
+              Copy password only
+            </button>
+          </div>
+          <div class="mt-5">
+            <button @click="closeReset()"
+                    class="px-4 py-1.5 rounded bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700">
+              Done
+            </button>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+</body>
+</html>

@@ -1,0 +1,17 @@
+#!/usr/bin/with-contenv bashio
+# DaVinci Resolve Postgres addon — postgres longrun.
+#
+# Drop to the `postgres` user via su-exec (already in HA base) and exec
+# the postmaster in the foreground so s6 supervises it directly. PGDATA
+# was prepared by /etc/cont-init.d/00-prep.sh on first boot; on every
+# subsequent boot it just exists.
+set -euo pipefail
+
+PGDATA=/data/pgdata
+PG_BIN=/usr/libexec/postgresql15
+
+bashio::log.info "starting postgres (15.x) on :5432 with PGDATA=${PGDATA}"
+
+exec su-exec postgres "${PG_BIN}/postgres" \
+    -D "${PGDATA}" \
+    -c config_file="${PGDATA}/postgresql.conf"

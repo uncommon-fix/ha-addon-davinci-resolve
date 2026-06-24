@@ -1,0 +1,51 @@
+name: DaVinci Resolve Postgres
+version: "0.1.0-alpha.1"
+slug: davinci-resolve
+description: PostgreSQL host for DaVinci Resolve Studio project databases, with a per-library web UI. Each "library" is a fresh database + user/password the user pastes into DaVinci's Connect-to-Postgres dialog. Media stays on your SMB share; only the project database lives here.
+arch:
+  - aarch64    # production target (RPi HAOS)
+  - amd64      # dev / x86 hosts
+init: false
+startup: services
+boot: manual
+# Cold backup: supervisor stops the addon during HA snapshot so PGDATA is
+# captured in a quiesced state. ~10-30s of downtime per backup; safest for
+# a database (no chance of inconsistent on-disk state at snapshot time).
+backup: cold
+# Prebuilt multi-arch images are published to GHCR by CI; the supervisor pulls
+# <image>:<version> for store installs. KEEP THIS COMMENTED for local builds:
+# when `image:` is set, the supervisor PULLS the prebuilt image instead of
+# building from this Dockerfile, so local-add-on dev iteration needs it off.
+# (`push_addon` in this monorepo's tooling toggles this in-flight; see
+# CLAUDE.md "DaVinci addon — public-alpha state & release workflow" block.)
+image: ghcr.io/uncommon-fix/ha-addon-davinci-resolve
+# AppArmor is disabled for the alpha: the add-on runs under Docker's default
+# profile rather than a custom one. A tailored profile is planned for a later
+# release (the Postgres process needs filesystem RW on /data/pgdata only).
+apparmor: false
+# hassio_api enabled so the backend may POST /addons/self/restart via the
+# SUPERVISOR_TOKEN env var (parity with the traefik addon; not used in v1
+# but kept available for future "Restart Postgres" UI button without a
+# round trip through the user clicking Restart in HA's UI).
+hassio_api: true
+hassio_role: default
+homeassistant_api: false
+ingress: true
+# Backend aiohttp listens on :8080 inside the container; HA's ingress proxy
+# rewrites public URLs to /api/hassio_ingress/<token>/ . The Postgres daemon
+# listens on :5432 (see `ports:` below) — that's the LAN-facing entry point
+# DaVinci Resolve clients connect to.
+ingress_port: 8080
+panel_icon: mdi:database
+panel_title: DaVinci Postgres
+panel_admin: true
+ports:
+  "5432/tcp": 5432
+ports_description:
+  "5432/tcp": "PostgreSQL — DaVinci Resolve clients on the LAN connect here"
+# No supervisor options: everything (per-library DBs + users) is managed via
+# the add-on's own Web UI under ingress, persisted to /data. `schema: false`
+# declares "no user-configurable options"; the supervisor shows only the
+# Network section (port above).
+options: {}
+schema: false
