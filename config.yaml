@@ -1,7 +1,7 @@
 name: DaVinci Resolve Postgres
-version: "0.1.0-alpha.2"
+version: "0.1.0-alpha.3"
 slug: davinci-resolve
-description: PostgreSQL host for DaVinci Resolve Studio project databases. Per-library web UI creates a fresh DB plus user with a random password, ready to paste into the DaVinci Connect to PostgreSQL dialog. Media stays on your SMB share; only the project database lives here.
+description: PostgreSQL host for DaVinci Resolve Studio project databases. Per-library web UI creates a fresh DB plus user with a random password, ready to paste into the DaVinci Connect to PostgreSQL dialog. Media stays on your SMB share. Only the project database lives here.
 arch:
   - aarch64    # production target (RPi HAOS)
   - amd64      # dev / x86 hosts

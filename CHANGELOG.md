@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.0-alpha.3
+
+- **CI fix round two — still no functional changes.** The alpha.2
+  build also failed because the `description:` field still contained
+  a SEMICOLON (`SMB share; only the project database lives here.`).
+  The `home-assistant/builder` composite action splices the
+  description into a bash context where `;` is a statement
+  separator, so bash tried to execute `only` as a command and bailed
+  with `line 9: only: command not found`. Rewrote the sentence
+  without `;` (split into two sentences). No image at
+  `ghcr.io/uncommon-fix/ha-addon-davinci-resolve:alpha.2` was
+  published; alpha.3 is the first usable release.
+
 ## 0.1.0-alpha.2
 
 - **CI fix — no functional changes.** The alpha.1 GHCR build failed

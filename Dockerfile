@@ -66,7 +66,7 @@ COPY web/ /usr/share/davinci-web/
 # reads ADDON_VERSION as a runtime env var (cache-busts app.js via a
 # `?v=<version>` query string on the <script src>, parity with the traefik
 # addon's alpha.14 pattern).
-ARG BUILD_VERSION=0.1.0-alpha.2
+ARG BUILD_VERSION=0.1.0-alpha.3
 ENV ADDON_VERSION=${BUILD_VERSION}
 
 # No CMD: s6-overlay's `legacy-services` service runs CMD if present; with
