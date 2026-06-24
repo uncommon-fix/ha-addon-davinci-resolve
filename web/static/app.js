@@ -329,7 +329,7 @@ function davinciAppData() {
 
         // -------------------- helpers --------------------
 
-        // alpha.6: traefik integration banner helpers.
+        // alpha.6/.7: traefik integration banner helpers.
         get showTraefikBanner() {
             return !!(this.state && this.state.traefik && this.state.traefik.installed)
                 && !this.traefikBannerDismissed;
@@ -346,6 +346,41 @@ function davinciAppData() {
         traefikAddonUrl() {
             const slug = (this.state.traefik && this.state.traefik.slug) || 'local_traefik';
             return `/hassio/addon/${slug}/info`;
+        },
+
+        // alpha.7: scaffold-in-traefik state machine. Three possible UI
+        // states for the banner action area:
+        //   'idle'      — initial; show "Create scaffold" button
+        //   'creating'  — in-flight; spinner; buttons disabled
+        //   'created'   — success; show "Open Traefik to Apply" instead
+        // Errors go to the toast queue + return to 'idle' so the user
+        // can retry. Per-session state — we don't persist this since the
+        // user might re-create after deleting in Traefik.
+        scaffoldState: 'idle',
+        scaffoldResult: null,        // {rid, name, message, traefik_slug}
+
+        async createTraefikScaffold() {
+            if (this.scaffoldState !== 'idle') return;
+            if (this.viewMode === 'ro') {
+                this.toast.error('Read-only — take over the session first.');
+                return;
+            }
+            this.scaffoldState = 'creating';
+            try {
+                const j = await this.api('POST', '/api/admin/scaffold-traefik-route');
+                this.scaffoldResult = j;
+                this.scaffoldState = 'created';
+                this.toast.success(
+                    `Route '${j.name}' scaffolded in Traefik's draft. Open Traefik and click Apply to publish.`
+                );
+            } catch (e) {
+                this.scaffoldState = 'idle';
+                if (e.code === 'VERSION_MISMATCH') {
+                    this.toast.error('Addon was updated — reload to continue.');
+                } else if (e.code !== 'SESSION_LOST') {
+                    this.toast.error(`Couldn't scaffold route in Traefik: ${e.message}`);
+                }
+            }
         },
 
         formatCreated(iso) {

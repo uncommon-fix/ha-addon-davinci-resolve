@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.1.0-alpha.7
+
+- **New: "Create scaffold in Traefik" button on the integration
+  banner.** When the Traefik addon is detected, the banner now has a
+  primary action that POSTs to Traefik's cross-addon API
+  (`/api/internal/routes`, new in Traefik 0.1.0-alpha.23) and
+  scaffolds a route named `davinci-resolve` into Traefik's DRAFT
+  pointing at this addon's container hostname + port 5432. The user
+  reviews the route in Traefik's UI and clicks Apply to publish.
+  Backend handles the cross-addon HTTP call (using the addon's
+  SUPERVISOR_TOKEN as the Bearer auth) so the browser doesn't need
+  to know about the bridge network or other addons' slugs.
+
+- **Honest scope.** The scaffolded route is HTTP, not TCP. PostgreSQL
+  isn't HTTP, so the route as-scaffolded won't actually proxy
+  Postgres traffic — it serves as a placeholder + naming anchor for
+  the user to customise. Full TCP route support requires Traefik
+  addon changes (TCP entrypoint + render.py changes + UI), which
+  isn't in this release. If you need real PG-over-Traefik now, edit
+  the dynamic config in the Traefik container directly.
+
+- **Error handling.** "Create scaffold" gracefully degrades when
+  Traefik is too old (404 → "update Traefik to alpha.23+"),
+  unreachable, or already has a davinci-resolve route in the draft
+  (409 → "already exists"). Errors surface as sticky toasts; the
+  button returns to its idle state for retry.
+
 ## 0.1.0-alpha.6
 
 - **Fixed: Server name showed the addon's container IP instead of the

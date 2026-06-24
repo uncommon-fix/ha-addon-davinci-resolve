@@ -69,11 +69,15 @@
     </button>
   </div>
 
-  <!-- ============ TRAEFIK INTEGRATION BANNER (alpha.6) ============
-       Shown when the sibling Traefik addon is detected via the supervisor
-       API. Dismissible per-browser via localStorage. Auto-route-creation
-       is out of scope for alpha.6; this banner is informational + a link
-       to the Traefik addon's UI for manual TCP-route setup. -->
+  <!-- ============ TRAEFIK INTEGRATION BANNER (alpha.6 + .7) ============
+       Shown when the sibling Traefik add-on is detected via the supervisor
+       API. Three UI states wired through scaffoldState (alpha.7):
+         - 'idle':     "Create scaffold in Traefik" + "Open Traefik" + "Dismiss"
+         - 'creating': spinner
+         - 'created':  "Route added to Traefik draft — open Traefik to Apply"
+       Dismissible per-browser via localStorage. The scaffold itself is
+       an HTTP route placeholder for now; full TCP-route support is
+       roadmap. -->
   <div x-show="showTraefikBanner" x-transition
        class="bg-sky-50 border-b border-sky-200 text-sky-900 text-sm px-4 py-3"
        role="status">
@@ -81,22 +85,48 @@
       <div class="flex items-start gap-2 min-w-0 flex-1">
         <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-sky-200 text-sky-800 text-xs shrink-0 mt-0.5" aria-hidden="true">i</span>
         <div class="min-w-0">
-          <strong>Traefik add-on detected</strong>
-          <span class="text-sky-700"
-                x-show="state.traefik && state.traefik.version"
-                x-text="'(' + state.traefik.version + ')'"></span>.
-          You can expose this Postgres server on a subdomain by adding a
-          <strong>TCP route</strong> in Traefik forwarding to
-          <span class="font-mono whitespace-nowrap" x-text="state.host_hint + ':' + state.port"></span>.
-          The Traefik add-on's UI handles HTTP routes today; TCP-route
-          UI is on the roadmap. For now, set it up in Traefik's
-          <span class="font-mono">dynamic/</span> config or open an issue
-          if you'd like a one-click flow here.
+          <template x-if="scaffoldState !== 'created'">
+            <div>
+              <strong>Traefik add-on detected</strong>
+              <span class="text-sky-700"
+                    x-show="state.traefik && state.traefik.version"
+                    x-text="'(' + state.traefik.version + ')'"></span>.
+              Click <strong>Create scaffold</strong> below to add a
+              placeholder route named <span class="font-mono">davinci-resolve</span>
+              into Traefik's draft, pointing at
+              <span class="font-mono whitespace-nowrap" x-text="state.host_hint + ':' + state.port"></span>.
+              You then open Traefik and click Apply. The scaffold is an
+              HTTP route — Postgres needs TCP routing, which the Traefik
+              add-on doesn't expose via its UI yet (roadmap). The route
+              gives you a starting point to customise in Traefik.
+            </div>
+          </template>
+          <template x-if="scaffoldState === 'created'">
+            <div>
+              <strong>Scaffolded route in Traefik's draft.</strong>
+              Open Traefik, review the
+              <span class="font-mono">davinci-resolve</span> route, then
+              click <strong>Apply</strong> to publish it. The route is
+              currently HTTP — adjust to TCP routing or treat as a
+              placeholder until full TCP support lands.
+            </div>
+          </template>
         </div>
       </div>
       <div class="flex items-center gap-2 shrink-0">
+        <button x-show="scaffoldState === 'idle'"
+                @click="createTraefikScaffold()"
+                :disabled="viewMode === 'ro'"
+                :title="viewMode === 'ro' ? 'Read-only — take over the session first' : 'Send a POST to Traefik\'s internal API'"
+                class="px-2.5 py-1 rounded bg-sky-600 text-white text-xs font-semibold hover:bg-sky-700 disabled:bg-gray-400">
+          Create scaffold
+        </button>
+        <button x-show="scaffoldState === 'creating'" disabled
+                class="px-2.5 py-1 rounded bg-sky-400 text-white text-xs font-semibold cursor-wait">
+          Creating…
+        </button>
         <a :href="traefikAddonUrl()" target="_top"
-           class="px-2.5 py-1 rounded bg-sky-600 text-white text-xs font-medium hover:bg-sky-700 no-underline">
+           class="px-2.5 py-1 rounded border border-sky-400 bg-white text-sky-800 text-xs font-medium hover:bg-sky-100 no-underline">
           Open Traefik
         </a>
         <button @click="dismissTraefikBanner()"

@@ -257,6 +257,107 @@ _TRAEFIK_CACHE_TS: float = 0.0
 _TRAEFIK_CACHE_TTL = 60.0
 
 
+# alpha.7: scaffold-in-traefik flow. The DR dashboard's traefik-detected
+# banner has a "Create scaffold in Traefik" button that POSTs to this
+# endpoint; backend then forwards a route request to the traefik addon's
+# internal API. Done server-side (not from the browser) so:
+#   1. We can use the SUPERVISOR_TOKEN bearer cleanly (env var only
+#      reachable from the backend);
+#   2. We can resolve the traefik addon's bridge hostname from our cached
+#      detection result without exposing that to the browser;
+#   3. Browser → traefik backend would need ingress routing dance; this
+#      is a clean container-to-container HTTP call.
+
+TRAEFIK_INTERNAL_PORT = 8080
+
+
+async def _scaffold_traefik_route(client: aiohttp.ClientSession,
+                                  traefik_info: dict) -> dict:
+    """POST to traefik's /api/internal/routes to scaffold a route named
+    `davinci-resolve` pointing at this addon's container hostname + PG
+    port. Returns the parsed response on success; raises web.HTTPException
+    with a descriptive body on failure so the caller can surface it
+    directly to the UI."""
+    if not traefik_info.get("installed"):
+        raise web.HTTPConflict(text="Traefik addon not detected — install it first.")
+
+    # Bridge-network hostname for the traefik addon. Per HA addon docs,
+    # the addon's slug is its DNS name on the supervisor's bridge. The
+    # slug we got from /addons includes the supervisor's prefix
+    # (`local_traefik` or `<repo-hash>_traefik`), which IS the hostname.
+    traefik_slug = traefik_info.get("slug") or "local_traefik"
+
+    # Our own hostname on the same bridge. Use the container's HOSTNAME
+    # env (which the supervisor sets to the addon's slug). Falls back to
+    # the canonical local-install form.
+    own_host = os.environ.get("HOSTNAME") or "local_davinci-resolve"
+
+    body = {
+        "name": "davinci-resolve",
+        "backend_kind": "external",
+        "backend_host": own_host,
+        "backend_port": PG_PORT,
+        "scheme": "http",          # placeholder — PG is TCP; documented limitation
+        "tls": False,
+        "source": "davinci-resolve",
+    }
+
+    url = f"http://{traefik_slug}:{TRAEFIK_INTERNAL_PORT}/api/internal/routes"
+    headers = {
+        "Authorization": f"Bearer {SUPERVISOR_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    try:
+        async with client.post(
+            url, headers=headers, json=body,
+            timeout=aiohttp.ClientTimeout(total=10),
+        ) as r:
+            if r.status == 404:
+                raise web.HTTPNotFound(
+                    text="The installed Traefik addon does not support the "
+                         "cross-addon scaffold API. Update Traefik to "
+                         "0.1.0-alpha.23 or later."
+                )
+            if r.status == 409:
+                resp = await r.json()
+                # ROUTE_EXISTS is the common case — scaffold already done.
+                raise web.HTTPConflict(
+                    text=resp.get("error",
+                                  "A davinci-resolve route already exists in Traefik's draft.")
+                )
+            if r.status >= 400:
+                txt = await r.text()
+                raise web.HTTPBadGateway(
+                    text=f"Traefik returned {r.status}: {txt[:300]}"
+                )
+            return await r.json()
+    except aiohttp.ClientConnectorError as e:
+        raise web.HTTPBadGateway(
+            text=f"Couldn't reach the Traefik addon at {url}. "
+                 f"Is it running? ({e})"
+        )
+    except asyncio.TimeoutError:
+        raise web.HTTPGatewayTimeout(
+            text=f"Timed out reaching the Traefik addon at {url}."
+        )
+
+
+async def post_scaffold_traefik(request: web.Request) -> web.Response:
+    """alpha.7: banner button calls this; backend forwards to traefik's
+    internal API. Returns the traefik response (with the new route's rid)
+    on success."""
+    client = request.app["client"]
+    info = await _detect_traefik(client)
+    result = await _scaffold_traefik_route(client, info)
+    return web.json_response({
+        "ok": True,
+        "rid": result.get("rid"),
+        "name": result.get("name"),
+        "message": result.get("message"),
+        "traefik_slug": info.get("slug"),
+    })
+
+
 async def _detect_traefik(client: aiohttp.ClientSession) -> dict:
     """Returns {installed: bool, slug?: str, version?: str, ingress_panel?: str}.
 
@@ -361,6 +462,9 @@ class _HTTPLocked(web.HTTPException):
 
 GATED_MUTATIONS: set[tuple[str, str]] = {
     ("POST", "/api/libraries"),
+    # alpha.7: scaffold flow is a user action triggered from the banner;
+    # session-gate it so two tabs can't race and double-create the route.
+    ("POST", "/api/admin/scaffold-traefik-route"),
     # DELETE /api/libraries/<name> and POST /api/libraries/<name>/reset-password
     # use prefix matching below.
 }
@@ -641,6 +745,9 @@ def make_app() -> web.Application:
     app.router.add_get("/api/admin/state", get_admin_state)
     app.router.add_post("/api/session/claim", post_session_claim)
     app.router.add_post("/api/session/takeover", post_session_takeover)
+    # alpha.7: cross-addon scaffold trigger. Backend calls traefik's
+    # /api/internal/routes from the supervisor bridge network.
+    app.router.add_post("/api/admin/scaffold-traefik-route", post_scaffold_traefik)
     return app
 
 
