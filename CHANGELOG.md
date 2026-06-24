@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.1.0-alpha.5
+
+- **Fixed: `Couldn't create library: failed to create library 'X':
+  [Errno 2] No such file or directory`.** Root cause was that
+  `/run/` is a tmpfs in the addon container and gets wiped on every
+  start, so the `/run/postgresql/` directory the backend connects
+  through never existed. Postgres started TCP-only and the backend's
+  `asyncpg.connect(host='/run/postgresql', ...)` failed with
+  `FileNotFoundError`, surfacing as the UI error above. Three fixes:
+  - cont-init now `mkdir -p /run/postgresql` + chowns it to the
+    postgres user on every boot, before either service starts.
+  - `postgresql.conf` pins `unix_socket_directories = '/run/postgresql'`
+    explicitly so PG and the backend agree on the path regardless of
+    whatever the Alpine build chose at compile time.
+  - alpha.5 includes an idempotent in-place migration step that
+    appends the `unix_socket_directories` line to existing
+    installs' `postgresql.conf` if it's missing (so alpha.4 →
+    alpha.5 upgrades pick up the fix without needing a manual
+    edit).
+  - The backend's wait-for-socket loop in
+    `rootfs/etc/services.d/backend/run` now logs LOUD errors on
+    timeout (instead of silently proceeding) so the next class of
+    socket issue surfaces in `ha apps logs` directly.
+
 ## 0.1.0-alpha.4
 
 - **CI fix round three — now we actually build.** alpha.3's tag pushed

@@ -4,17 +4,32 @@
 # Waits up to ~10s for postgres' unix socket to appear, then exec's the
 # aiohttp server. The wait avoids a noisy first-boot 500 from /api/admin/state
 # if the backend wins the race over postgres' startup.
+#
+# alpha.5: if the wait TIMES OUT (postgres never bound the socket), log
+# loudly so the issue is obvious in `ha apps logs` — the alpha.4 failure
+# mode was a silent timeout followed by Errno-2 errors from the API, with
+# nothing pointing at the socket path being missing.
 set -euo pipefail
 
 bashio::log.info "starting backend (aiohttp on :8080); waiting for postgres socket"
 
 SOCKET_DIR=/run/postgresql
+SOCKET_PATH="${SOCKET_DIR}/.s.PGSQL.5432"
+SOCKET_READY=0
 for _ in $(seq 1 20); do
-    if [ -S "${SOCKET_DIR}/.s.PGSQL.5432" ]; then
-        bashio::log.info "postgres socket up; starting backend"
+    if [ -S "${SOCKET_PATH}" ]; then
+        bashio::log.info "postgres socket up at ${SOCKET_PATH}; starting backend"
+        SOCKET_READY=1
         break
     fi
     sleep 0.5
 done
+
+if [ "${SOCKET_READY}" -ne 1 ]; then
+    bashio::log.error "TIMEOUT waiting for postgres unix socket at ${SOCKET_PATH} after 10s."
+    bashio::log.error "  - Does ${SOCKET_DIR}/ exist + is postgres user (UID $(id -u postgres)) the owner?"
+    bashio::log.error "  - Is postgresql.conf's unix_socket_directories pinned to ${SOCKET_DIR}?"
+    bashio::log.error "Backend will still start but /api/libraries calls will fail with Errno 2 until the socket is available."
+fi
 
 exec python3 /usr/local/bin/backend/server.py

@@ -28,6 +28,17 @@ mkdir -p "${PGDATA}"
 chown -R "${PG_UID}:${PG_GID}" /data
 chmod 700 "${PGDATA}"
 
+# 1b. /run is a tmpfs and gets wiped on EVERY container start. Postgres
+#     needs /run/postgresql/ to exist + be writable by the postgres user
+#     so it can bind the unix socket .s.PGSQL.5432 there. Without this,
+#     postgres starts TCP-only and the backend's asyncpg.connect() to the
+#     unix socket fails with `[Errno 2] No such file or directory` — which
+#     surfaces in the UI as "Couldn't create library" with that exact
+#     wording. Alpha.5 fix; mkdir is idempotent.
+mkdir -p /run/postgresql
+chown "${PG_UID}:${PG_GID}" /run/postgresql
+chmod 0775 /run/postgresql
+
 # 2. First-boot initdb. The PGDATA/PG_VERSION sentinel file is written by
 #    initdb itself and is the standard "cluster has been initialised"
 #    signal; postgres' own startup checks for it too.
@@ -54,11 +65,17 @@ if [ ! -f "${PGDATA}/PG_VERSION" ]; then
     # has to listen on 0.0.0.0 (not just 127.0.0.1) so the bridge network
     # forward works.
     cat > "${PGDATA}/postgresql.conf" <<'CONF'
-# DaVinci Resolve addon — Postgres 15 homelab defaults
+# DaVinci Resolve addon — Postgres homelab defaults
 # Comments mark non-defaults; everything else is the PG 17 stock default.
 
 listen_addresses = '*'         # bind all NICs inside the container
 port = 5432
+# Pin the unix-socket dir to the path the backend connects on. /run is
+# tmpfs in the container; cont-init recreates the dir on every boot.
+# Without this explicit pin, PG might fall back to its compile-time
+# default (sometimes /tmp) and the backend's asyncpg.connect would fail
+# with [Errno 2] looking at /run/postgresql/.s.PGSQL.5432.
+unix_socket_directories = '/run/postgresql'
 
 # Modest memory footprint suitable for an HA Pi (1-2 GB available RAM).
 # Tune in-place by editing this file directly + restarting the addon if
@@ -102,6 +119,20 @@ CONF
 
     chown -R "${PG_UID}:${PG_GID}" "${PGDATA}"
     chmod 600 "${PGDATA}/postgresql.conf" "${PGDATA}/pg_hba.conf"
+fi
+
+# 2b. Alpha.5 upgrade migration: ensure unix_socket_directories is pinned
+#     in postgresql.conf for installs that originally came up on alpha.4
+#     (which omitted the line and let postgres pick its compile-time
+#     default, which on Alpine 3.23's postgresql17 evidently isn't
+#     /run/postgresql/). Idempotent: only appends if the line isn't
+#     already there. Safe to run on every boot.
+if [ -f "${PGDATA}/postgresql.conf" ] \
+   && ! grep -q "^unix_socket_directories" "${PGDATA}/postgresql.conf"; then
+    bashio::log.info "alpha.5 migration: pinning unix_socket_directories in existing postgresql.conf"
+    printf "\n# alpha.5 migration: pinned to match backend's asyncpg socket path\nunix_socket_directories = '/run/postgresql'\n" \
+        >> "${PGDATA}/postgresql.conf"
+    chown "${PG_UID}:${PG_GID}" "${PGDATA}/postgresql.conf"
 fi
 
 # 3. Stamp the addon config file with a superuser password (used internally
