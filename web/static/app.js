@@ -27,7 +27,21 @@ function davinciAppData() {
 
         // Wire state
         libraries: [],
-        state: { pg_up: false, pg_version: '', library_count: 0, host_hint: '', port: 5432 },
+        state: {
+            pg_up: false, pg_version: '', library_count: 0,
+            host_hint: '', port: 5432,
+            // alpha.6: traefik addon detection. {installed: bool, slug?: str,
+            // version?: str}; populated by /api/admin/state poll.
+            traefik: { installed: false },
+        },
+        // alpha.6: dismiss the traefik banner per-session (and persist via
+        // localStorage so it stays dismissed across reloads). The user can
+        // re-open the banner by clearing the storage key — intentionally
+        // not adding a "re-show" UI for v1, keep it simple.
+        traefikBannerDismissed: (() => {
+            try { return localStorage.getItem('davinci:traefikBannerDismissed') === '1'; }
+            catch (_) { return false; }
+        })(),
         loading: true,
         busy: false,                   // in-flight mutation
 
@@ -314,6 +328,25 @@ function davinciAppData() {
         },
 
         // -------------------- helpers --------------------
+
+        // alpha.6: traefik integration banner helpers.
+        get showTraefikBanner() {
+            return !!(this.state && this.state.traefik && this.state.traefik.installed)
+                && !this.traefikBannerDismissed;
+        },
+        dismissTraefikBanner() {
+            this.traefikBannerDismissed = true;
+            try { localStorage.setItem('davinci:traefikBannerDismissed', '1'); }
+            catch (_) { /* private mode / quota — drop quietly */ }
+        },
+        // Build the HA path the user navigates to for the Traefik addon's
+        // own ingress UI. HA's addon info page lives at /hassio/addon/<slug>;
+        // the ingress UI is /hassio/ingress/<slug>. Either is fine — info
+        // gives the user a clear landing with an "Open Web UI" button.
+        traefikAddonUrl() {
+            const slug = (this.state.traefik && this.state.traefik.slug) || 'local_traefik';
+            return `/hassio/addon/${slug}/info`;
+        },
 
         formatCreated(iso) {
             if (!iso) return '?';

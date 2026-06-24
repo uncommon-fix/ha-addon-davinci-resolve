@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.1.0-alpha.6
+
+- **Fixed: Server name showed the addon's container IP instead of the
+  HA host's LAN IP.** The Create-library + Reset-password modals were
+  displaying values like `172.30.33.4` (the addon's address on the
+  supervisor bridge), which is unreachable from DaVinci Resolve
+  clients on the LAN. The detection now queries the supervisor's
+  `/network/info` endpoint for the host's primary IPv4 (e.g.
+  `10.0.0.169`) and caches it. Falls back to the host's
+  `<hostname>.local` mDNS name, and finally to a clear
+  `<your-HA-host-IP>` placeholder so the wrong-but-plausible
+  container IP can't sneak through.
+- **New: Traefik add-on integration banner.** If the sibling Traefik
+  add-on is installed (detected by polling the supervisor's
+  `/addons` endpoint), the DR dashboard shows a dismissible info
+  banner explaining how to expose the Postgres server on a subdomain
+  via a Traefik **TCP route**. The banner links to the Traefik
+  add-on's UI for manual setup. Auto-route-creation isn't in this
+  release (Traefik's data model is HTTP-only today; TCP-route
+  support needs a UI extension in the Traefik addon). The banner is
+  dismissed per-browser via localStorage.
+- **Note on Traefik detection scope.** Auto-detection uses the
+  supervisor's API with the addon's default `hassio_role`. If the
+  role isn't elevated enough to list `/addons`, the banner just
+  doesn't render — no error surface. If you have Traefik installed
+  and the banner doesn't appear, file an issue and we'll bump the
+  role.
+
 ## 0.1.0-alpha.5
 
 - **Fixed: `Couldn't create library: failed to create library 'X':

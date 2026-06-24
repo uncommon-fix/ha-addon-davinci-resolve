@@ -69,6 +69,45 @@
     </button>
   </div>
 
+  <!-- ============ TRAEFIK INTEGRATION BANNER (alpha.6) ============
+       Shown when the sibling Traefik addon is detected via the supervisor
+       API. Dismissible per-browser via localStorage. Auto-route-creation
+       is out of scope for alpha.6; this banner is informational + a link
+       to the Traefik addon's UI for manual TCP-route setup. -->
+  <div x-show="showTraefikBanner" x-transition
+       class="bg-sky-50 border-b border-sky-200 text-sky-900 text-sm px-4 py-3"
+       role="status">
+    <div class="max-w-5xl mx-auto flex items-start justify-between gap-3 flex-wrap">
+      <div class="flex items-start gap-2 min-w-0 flex-1">
+        <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-sky-200 text-sky-800 text-xs shrink-0 mt-0.5" aria-hidden="true">i</span>
+        <div class="min-w-0">
+          <strong>Traefik add-on detected</strong>
+          <span class="text-sky-700"
+                x-show="state.traefik && state.traefik.version"
+                x-text="'(' + state.traefik.version + ')'"></span>.
+          You can expose this Postgres server on a subdomain by adding a
+          <strong>TCP route</strong> in Traefik forwarding to
+          <span class="font-mono whitespace-nowrap" x-text="state.host_hint + ':' + state.port"></span>.
+          The Traefik add-on's UI handles HTTP routes today; TCP-route
+          UI is on the roadmap. For now, set it up in Traefik's
+          <span class="font-mono">dynamic/</span> config or open an issue
+          if you'd like a one-click flow here.
+        </div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <a :href="traefikAddonUrl()" target="_top"
+           class="px-2.5 py-1 rounded bg-sky-600 text-white text-xs font-medium hover:bg-sky-700 no-underline">
+          Open Traefik
+        </a>
+        <button @click="dismissTraefikBanner()"
+                class="px-2.5 py-1 rounded border border-sky-300 bg-white text-sky-800 text-xs font-medium hover:bg-sky-100"
+                aria-label="Dismiss this banner">
+          Dismiss
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ HEADER ============ -->
   <header class="bg-white border-b border-gray-200">
     <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between flex-wrap gap-3">
