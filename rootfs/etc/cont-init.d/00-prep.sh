@@ -13,7 +13,7 @@ bashio::log.info "davinci-resolve cont-init: bootstrap + perms"
 PGDATA=/data/pgdata
 CONFIG=/data/davinci.yml
 LIBRARIES=/data/libraries.yml
-PG_BIN=/usr/libexec/postgresql15
+PG_BIN=/usr/libexec/postgresql17
 
 # Postgres uid/gid from the postgres user we'll exec as.
 PG_UID=$(id -u postgres)
@@ -38,7 +38,7 @@ if [ ! -f "${PGDATA}/PG_VERSION" ]; then
     #   as the postgres superuser to create DBs/roles; trust on the local
     #   socket is fine because the socket only exists inside this
     #   container (no host bind mount).
-    # --encoding=UTF8 + locale=C.UTF-8: stable across hosts; PG 15 default
+    # --encoding=UTF8 + locale=C.UTF-8: stable across hosts; PG default
     #   on Alpine.
     su-exec postgres "${PG_BIN}/initdb" \
         --pgdata="${PGDATA}" \
@@ -55,7 +55,7 @@ if [ ! -f "${PGDATA}/PG_VERSION" ]; then
     # forward works.
     cat > "${PGDATA}/postgresql.conf" <<'CONF'
 # DaVinci Resolve addon — Postgres 15 homelab defaults
-# Comments mark non-defaults; everything else is the PG 15 stock default.
+# Comments mark non-defaults; everything else is the PG 17 stock default.
 
 listen_addresses = '*'         # bind all NICs inside the container
 port = 5432

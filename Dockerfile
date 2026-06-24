@@ -1,21 +1,26 @@
 ARG BUILD_FROM=ghcr.io/home-assistant/base:3.23
 FROM ${BUILD_FROM}
 
-# DaVinci Resolve Postgres addon — alpha.1
+# DaVinci Resolve Postgres addon — alpha.4
 #
 # Apk layout:
-# - postgresql15 + postgresql15-contrib: the server. Alpine 3.21 ships PG 15.
+# - postgresql17 + postgresql17-contrib: the server. HA base 3.23 == Alpine
+#   3.23, which ships PG 16 in community + 17/18 in main; we use 17 to stay
+#   in main (no --repository flag needed) and pick the LTS-class current
+#   release. Alpha.1 + alpha.2 + alpha.3 used postgresql15 which Alpine 3.23
+#   dropped from its package index entirely (the migration of `image:` =
+#   alpine:3.23 vs the earlier 3.21 happened upstream between drafts).
 # - py3-aiohttp: backend HTTP framework (same as traefik addon, ingress UI).
 # - py3-asyncpg: async PG client used by the backend to manage libraries.
 # - py3-yaml: parse + write /data/libraries.yml + /data/davinci.yml.
 # - su-exec: drop from root to postgres UID for the daemon longrun.
 # - ca-certificates: belt-and-braces; not strictly needed by PG itself.
 #
-# One RUN to keep layer count down. The smoke test at the end (`pg_ctl
+# One RUN to keep layer count down. The smoke test at the end (`postgres
 # --version` + python3 import asyncpg) fails the build loud if any apk pull
 # regressed.
 RUN apk add --no-cache \
-        postgresql15 postgresql15-contrib \
+        postgresql17 postgresql17-contrib \
         python3 py3-aiohttp py3-asyncpg py3-yaml \
         su-exec ca-certificates \
  && postgres --version \
@@ -66,7 +71,7 @@ COPY web/ /usr/share/davinci-web/
 # reads ADDON_VERSION as a runtime env var (cache-busts app.js via a
 # `?v=<version>` query string on the <script src>, parity with the traefik
 # addon's alpha.14 pattern).
-ARG BUILD_VERSION=0.1.0-alpha.3
+ARG BUILD_VERSION=0.1.0-alpha.4
 ENV ADDON_VERSION=${BUILD_VERSION}
 
 # No CMD: s6-overlay's `legacy-services` service runs CMD if present; with

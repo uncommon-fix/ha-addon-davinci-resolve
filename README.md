@@ -12,7 +12,7 @@ database here, covered by Home Assistant's normal backup flow.
 
 ## What it does
 
-- Runs PostgreSQL 15 inside an HA add-on, with PGDATA on `/data` (so
+- Runs PostgreSQL 17 inside an HA add-on, with PGDATA on `/data` (so
   Home Assistant's full backups cover it automatically; `backup: cold`
   means the supervisor stops the add-on cleanly during the snapshot).
 - Exposes a small web UI under HA ingress to create / list / delete

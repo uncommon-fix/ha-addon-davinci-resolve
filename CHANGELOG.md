@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.1.0-alpha.4
+
+- **CI fix round three — now we actually build.** alpha.3's tag pushed
+  the first time a real Docker build was attempted (the shell-quoting
+  saga in alpha.1+alpha.2 never got far enough to run apk). That build
+  failed with `ERROR: unable to select packages: postgresql15 (no such
+  package)`. Investigation: the HA base image
+  `ghcr.io/home-assistant/base:3.23` is built on **Alpine 3.23**
+  (per its `io.hass.base.image` label), and Alpine 3.23's repos only
+  ship PostgreSQL 16 (community), 17 (main), and 18 (main) — PG 15
+  was dropped from the index entirely. Switched the addon to
+  **PostgreSQL 17** (main repo, no extra `--repository` flag) and
+  updated the binary paths from `/usr/libexec/postgresql15` to
+  `/usr/libexec/postgresql17` in cont-init + the postgres service
+  longrun.
+- **DaVinci Resolve compatibility note.** Blackmagic's official docs
+  call out PG 13 for DR 18/19; PG 17 is newer and works fine in
+  practice for the project-DB use case (DR uses basic SQL + the
+  stable wire protocol). If you hit a compat issue with a specific
+  DR build, file an issue; we can always pin to PG 16 (community
+  repo) instead.
+- **First publish that actually lands an image.** alpha.1, alpha.2,
+  and alpha.3 produced no `ghcr.io/uncommon-fix/ha-addon-davinci-resolve`
+  image at all (apostrophe → semicolon → missing package, in that
+  order). alpha.4 is the first usable release; install / upgrade
+  starts here.
+
 ## 0.1.0-alpha.3
 
 - **CI fix round two — still no functional changes.** The alpha.2

@@ -8,9 +8,9 @@
 set -euo pipefail
 
 PGDATA=/data/pgdata
-PG_BIN=/usr/libexec/postgresql15
+PG_BIN=/usr/libexec/postgresql17
 
-bashio::log.info "starting postgres (15.x) on :5432 with PGDATA=${PGDATA}"
+bashio::log.info "starting postgres (17.x) on :5432 with PGDATA=${PGDATA}"
 
 exec su-exec postgres "${PG_BIN}/postgres" \
     -D "${PGDATA}" \

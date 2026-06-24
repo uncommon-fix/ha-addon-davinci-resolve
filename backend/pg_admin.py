@@ -127,7 +127,7 @@ def random_password(length: int = 32) -> str:
 
 async def _connect_superuser() -> asyncpg.Connection:
     """Connect via the local unix socket as `postgres`. pg_hba.conf trusts
-    this path; no password needed. The socket dir is the PG 15 default on
+    this path; no password needed. The socket dir is the PG default on
     Alpine: /run/postgresql/."""
     return await asyncpg.connect(
         host="/run/postgresql",

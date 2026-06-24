@@ -8,7 +8,7 @@
    `postgresql.conf` + `pg_hba.conf`, and starts Postgres on
    `:5432` + the management UI on ingress.
 2. **Open Web UI.** The header status strip should show
-   `PG 15.x · 0 libraries · up · <your-Pi-IP>:5432`.
+   `PG 17.x · 0 libraries · up · <your-Pi-IP>:5432`.
 
 ## Create a library (one per DaVinci Resolve project DB)
 
@@ -111,7 +111,7 @@ database; "hot" backup with `pg_dumpall` is a possible future option
 
 ## Versions
 
-- PostgreSQL **15** (Alpine 3.21 default).
+- PostgreSQL **17** (from Alpine 3.23's main repo).
 - DaVinci Resolve **18** + **19** clients supported (both use
   `scram-sha-256`); **DR 17** is not (requires PG 9.5 + `md5`).
 - HA add-on base image: `ghcr.io/home-assistant/base:3.23`.
